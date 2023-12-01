@@ -1,2 +1,4 @@
 # advent_of_code
-My code for Advent of Code 2023
+My Python solutions for Advent of Code 2023
+
+Don't expect clean code.
