@@ -160,5 +160,4 @@ cython_debug/
 #.idea/
 
 */output.txt
-*/input.txt
-*/input_sample.txt
+*/input*.txt
