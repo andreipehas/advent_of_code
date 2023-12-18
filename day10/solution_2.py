@@ -1,3 +1,5 @@
+# TODO: make sneaking between pipes valid
+
 from contextlib import redirect_stdout
 from pathlib import Path
 from typing import List, Tuple
@@ -19,69 +21,69 @@ DIRECTIONS = {
     ".": [],
     }
 
-def valid_coordinates(size: int, x: int, y: int) -> bool:
-   return 0 <= x and x < size and 0 <= y and y < size
+def valid_coordinates(size_x: int, size_y: int, x: int, y: int) -> bool:
+   return 0 <= x and x < size_x and 0 <= y and y < size_y
 
 def valid_transition(target_symbol: str, reverse_direction: Tuple[int, int]) -> bool:
     return reverse_direction in DIRECTIONS[target_symbol]
 
-def traverse(
-        explore_queue: List[Tuple[int, int]], 
-        steps: List[List[int]], 
-        xstop: int, 
-        ystop: int
-    ) -> bool:
-    symbol = lines[xstop][ystop]
-
-    for (x, y) in explore_queue:
-        for dx, dy in DIRECTIONS[lines[x][y]]:
-            if (valid_coordinates(len(lines), x + dx, y + dy) and valid_transition(lines[x+dx][y+dy], (-dx, -dy))):
-                if x + dx == xstop and y + dy == ystop:
-                    if (x, y) == explore_queue[0]:
-                        continue
-                    return True
-                steps[x + dx][y + dy] = symbol
-                explore_queue.append((x + dx, y + dy))
-    
-    return False
-
-def bfs(lines: List[List[str]], x: int, y: int) -> str:
-    steps = [[float("inf")] * len(lines) for _ in range(len(lines))]
+def bfs(lines: List[List[str]], x: int, y: int) -> Tuple[List[List[str]], Tuple[str, str]]:
+    explore_queue = []
+    steps = [[None] * len(lines[0]) for _ in range(len(lines))]
+    steps[x][y] = 'X'
 
     # north valid start?
-    if valid_coordinates(len(lines), x-1, y) and (lines[x-1][y] == "F" or lines[x-1][y] == "7" or lines[x-1][y] == '|'):
-        steps[x][y] = 'N'
+    if valid_coordinates(len(lines), len(lines[0]), x - 1, y) and valid_transition(lines[x-1][y], (1, 0)):
         steps[x-1][y] = 'N'
-        if traverse([(x-1, y)], steps, x, y):
-            return steps, 'N'
+        explore_queue.append((x - 1, y))
 
     # south valid start?
-    if valid_coordinates(len(lines), x+1, y) and (lines[x+1][y] == "J" or lines[x+1][y] == "L" or lines[x+1][y] == '|'):
-        steps[x][y] = 'S'
+    if valid_coordinates(len(lines), len(lines[0]), x + 1, y) and valid_transition(lines[x+1][y], (-1, 0)):
         steps[x+1][y] = 'S'
-        if traverse([(x+1, y)], steps, x, y):
-            return steps, 'S'
+        explore_queue.append((x + 1, y))
 
     # east valid start?
-    if valid_coordinates(len(lines), x, y+1) and (lines[x][y+1] == "7" or lines[x][y+1] == "J" or lines[x][y+1] == '-'):
-        steps[x][y] = 'E'
+    if valid_coordinates(len(lines), len(lines[0]), x, y+1) and valid_transition(lines[x][y+1], (0, -1)):
         steps[x][y+1] = 'E'
-        if traverse([(x, y+1)], steps, x, y):
-            return steps, 'E'
+        explore_queue.append((x, y + 1))
 
     # west valid start?
-    if valid_coordinates(len(lines), x, y-1) and (lines[x][y-1] == "L" or lines[x][y-1] == "F" or lines[x][y-1] == '-'):
-        steps[x][y] = 'W'
+    if valid_coordinates(len(lines), len(lines[0]), x, y-1) and valid_transition(lines[x][y-1], (0, 1)):
         steps[x][y-1] = 'W'
-        if traverse([(x, y-1)], steps, x, y):
-            return steps, 'W'
+        explore_queue.append((x, y - 1))
 
-def flood_fill(steps: List[List[int]], explore_queue: List[Tuple[int, int]], symbol: str) -> None:
-    for (x, y) in explore_queue:
-        # TODO this can be cleaner
+    # traverse the array
+    while explore_queue:
+        x, y = explore_queue.pop(0)
+        for dx, dy in DIRECTIONS[lines[x][y]]:
+            if (
+                valid_coordinates(len(lines), len(lines[0]), x + dx, y + dy) and
+                valid_transition(lines[x+dx][y+dy], (-dx, -dy))
+            ):
+                if steps[x+dx][y+dy] and steps[x+dx][y+dy] != 'X' and steps[x+dx][y+dy] != steps[x][y]:
+                    return steps, (steps[x][y], steps[x+dx][y+dy])
+                if not steps[x+dx][y+dy]:
+                    steps[x+dx][y+dy] = steps[x][y]
+                    explore_queue.append((x+dx, y+dy))
+
+    return -1
+
+def flood_fill(
+        steps: List[List[int]],
+        x: int,
+        y: int,
+        symbols: Tuple[str, str]
+    ) -> None:
+    explore_queue = [(x, y)]
+
+    while explore_queue:
+        x, y = explore_queue.pop(0)
         for dx, dy in DIRECTIONS["S"]:
-            if (valid_coordinates(len(lines), x + dx, y + dy) and steps[x + dx][y + dy] != symbol):
-                steps[x + dx][y + dy] = symbol
+            if (
+                valid_coordinates(len(lines), len(lines[0]), x + dx, y + dy)
+                and not steps[x + dx][y + dy] in symbols
+            ):
+                steps[x + dx][y + dy] = symbols[0]
                 explore_queue.append((x + dx, y + dy))
 
 if __name__ == "__main__":
@@ -99,17 +101,22 @@ if __name__ == "__main__":
                     start_coordinates = (i, j)
                     break
             
-            steps, symbol = bfs(lines, *start_coordinates)
-            for i in range(len(lines)):
-                if lines[i][0] != symbol:
-                    flood_fill(steps, [(i, 0)], symbol)
-                if lines[0][i] != symbol:
-                    flood_fill(steps, [(0, i)], symbol)
-                if lines[i][len(lines) - 1] != symbol:
-                    flood_fill(steps, [(i, len(lines) - 1)], symbol)
-                if lines[len(lines) - 1][i] != symbol:
-                    flood_fill(steps, [(len(lines) - 1, i)], symbol)
-            sol = sum(step.count(float("inf")) for step in steps)
-                
+            steps, symbols = bfs(lines, *start_coordinates)
 
+            for i in range(len(lines)):
+                if not lines[i][0] in symbols:
+                    flood_fill(steps, i, 0, symbols)
+
+                if not lines[i][len(lines) - 1] in symbols:
+                    flood_fill(steps, i, len(lines[0]) - 1, symbols)
+
+            for i in range(len(lines[0])):
+                if not lines[0][i] in symbols:
+                    flood_fill(steps, 0, i, symbols)
+
+                if not lines[len(lines) - 1][i] in symbols:
+                    flood_fill(steps, len(lines) - 1, i, symbols)
+
+            sol = sum(step.count(None) for step in steps)
+                
         print(f"------> {sol}")
