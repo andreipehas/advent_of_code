@@ -1,8 +1,6 @@
-# TODO: make sneaking between pipes valid
-
 from contextlib import redirect_stdout
 from pathlib import Path
-from typing import List, Tuple
+from typing import List
 
 INPUT_NAME = "input.txt"
 
@@ -11,6 +9,8 @@ SOUTH = (1, 0)
 EAST  = (0, 1)
 WEST  = (0, -1)
 DIRECTIONS = {
+    None: [NORTH, SOUTH, EAST, WEST],
+    "ALL": [NORTH, SOUTH, EAST, WEST],
     "S": [NORTH, SOUTH, EAST, WEST],
     "F": [SOUTH, EAST],
     "7": [SOUTH, WEST],
@@ -19,72 +19,116 @@ DIRECTIONS = {
     "|": [NORTH, SOUTH],
     "-": [EAST, WEST],
     ".": [],
-    }
+}
+STAY = (0, 0)
+NORTH_WEST = (-1, -1)
+DIRECTIONS_GRID = [STAY, NORTH, WEST, NORTH_WEST]
 
-def valid_coordinates(size_x: int, size_y: int, x: int, y: int) -> bool:
-   return 0 <= x and x < size_x and 0 <= y and y < size_y
+def is_cell_valid(size_x: int, size_y: int, x: int, y: int) -> bool:
+   return 0 <= x and x <  size_x and 0 <= y and y <  size_y
 
-def valid_transition(target_symbol: str, reverse_direction: Tuple[int, int]) -> bool:
+def are_coordinates_valid_grid(size_x: int, size_y: int, x: int, y: int) -> bool:
+   return 0 <= x and x <= size_x and 0 <= y and y <= size_y 
+
+def is_valid_transition_cells(target_symbol, reverse_direction) -> bool:
     return reverse_direction in DIRECTIONS[target_symbol]
 
-def bfs(lines: List[List[str]], x: int, y: int) -> Tuple[List[List[str]], Tuple[str, str]]:
-    explore_queue = []
-    steps = [[None] * len(lines[0]) for _ in range(len(lines))]
-    steps[x][y] = 'X'
+def is_valid_transition_grid(lines, x, y, dx, dy, size_x, size_y) -> bool:
+    # East
+    if dx == 0 and dy == 1:
+        return (NORTH not in DIRECTIONS[lines[x]  [y]] if is_cell_valid(size_x, size_y,   x, y) else True) \
+           or  (SOUTH not in DIRECTIONS[lines[x-1][y]] if is_cell_valid(size_x, size_y, x-1, y) else True)
+    
+    # West
+    if dx == 0 and dy == -1:
+        return (NORTH not in DIRECTIONS[lines[x]  [y-1]] if is_cell_valid(size_x, size_y, x,   y-1) else True) \
+           or  (SOUTH not in DIRECTIONS[lines[x-1][y-1]] if is_cell_valid(size_x, size_y, x-1, y-1) else True)
+    
+    # North
+    if dx == -1 and dy == 0:
+        return (EAST not in DIRECTIONS[lines[x-1][y-1]] if is_cell_valid(size_x, size_y, x-1, y-1) else True) \
+           or  (WEST not in DIRECTIONS[lines[x-1]  [y]] if is_cell_valid(size_x, size_y, x-1,   y) else True)
 
-    # north valid start?
-    if valid_coordinates(len(lines), len(lines[0]), x - 1, y) and valid_transition(lines[x-1][y], (1, 0)):
-        steps[x-1][y] = 'N'
-        explore_queue.append((x - 1, y))
+    # South
+    if dx == 1 and dy == 0:
+        return (EAST not in DIRECTIONS[lines[x][y-1]] if is_cell_valid(size_x, size_y, x, y-1) else True) \
+           or  (WEST not in DIRECTIONS[lines[x]  [y]] if is_cell_valid(size_x, size_y, x,   y) else True)
+    
+    raise ValueError(f"What do you mean ({dx},{dy})?!?")
 
-    # south valid start?
-    if valid_coordinates(len(lines), len(lines[0]), x + 1, y) and valid_transition(lines[x+1][y], (-1, 0)):
-        steps[x+1][y] = 'S'
-        explore_queue.append((x + 1, y))
-
-    # east valid start?
-    if valid_coordinates(len(lines), len(lines[0]), x, y+1) and valid_transition(lines[x][y+1], (0, -1)):
-        steps[x][y+1] = 'E'
-        explore_queue.append((x, y + 1))
-
-    # west valid start?
-    if valid_coordinates(len(lines), len(lines[0]), x, y-1) and valid_transition(lines[x][y-1], (0, 1)):
-        steps[x][y-1] = 'W'
-        explore_queue.append((x, y - 1))
+def is_loop(lines, x, y, start_x, start_y):
+    explore_queue = [(x,y)]
+    steps = [[float("inf")] * len(lines[0]) for _ in range(len(lines))]
+    steps[x][y] = 0
 
     # traverse the array
     while explore_queue:
         x, y = explore_queue.pop(0)
         for dx, dy in DIRECTIONS[lines[x][y]]:
             if (
-                valid_coordinates(len(lines), len(lines[0]), x + dx, y + dy) and
-                valid_transition(lines[x+dx][y+dy], (-dx, -dy))
+                is_cell_valid(len(lines), len(lines[0]), x + dx, y + dy) and
+                is_valid_transition_cells(lines[x+dx][y+dy], (-dx, -dy))
             ):
-                if steps[x+dx][y+dy] and steps[x+dx][y+dy] != 'X' and steps[x+dx][y+dy] != steps[x][y]:
-                    return steps, (steps[x][y], steps[x+dx][y+dy])
-                if not steps[x+dx][y+dy]:
-                    steps[x+dx][y+dy] = steps[x][y]
+                if x + dx == start_x and y + dy == start_y:
+                    return True
+                if steps[x+dx][y+dy] == float("inf"):
                     explore_queue.append((x+dx, y+dy))
+    return False
 
-    return -1
+def mark_loop(lines, x, y):
+    explore_queue = [(x,y)]
+    reachable = [[0] * len(lines[0]) for _ in range(len(lines))]
+    reachable[x][y] = 0
+
+    # traverse the array
+    while explore_queue:
+        x, y = explore_queue.pop(0)
+        for dx, dy in DIRECTIONS[lines[x][y]]:
+            if (
+                is_cell_valid(len(lines), len(lines[0]), x + dx, y + dy) and
+                is_valid_transition_cells(lines[x+dx][y+dy], (-dx, -dy))
+            ):
+                if reachable[x+dx][y+dy] == 0:
+                    explore_queue.append((x+dx, y+dy))
+                    reachable[x+dx][y+dy] = 1
+    return reachable
+
+def mark_loop_as_visited(lines, x, y) -> int:
+    # Does the loop go:
+    for dx, dy in (NORTH, WEST, SOUTH, EAST):
+        if is_valid_transition_cells(lines[x+dx][y+dy], (-dx, -dy)) and is_loop(lines, x + dx, y + dy, x, y):
+            return mark_loop(lines, x + dx, y + dy)
+
 
 def flood_fill(
-        steps: List[List[int]],
-        x: int,
-        y: int,
-        symbols: Tuple[str, str]
+        lines: List[List[int]], reachable
     ) -> None:
-    explore_queue = [(x, y)]
+    # Here coordinates are no longer cells - but on the grid between them
+    # in order to squeeze between pipes
+    explore_queue = [(0, 0)]
+    visited = [[False] * (len(lines[0]) + 1) for _ in range((len(lines) + 1))]
+    visited[0][0] = True
 
     while explore_queue:
         x, y = explore_queue.pop(0)
-        for dx, dy in DIRECTIONS["S"]:
+
+        # What grid cells are accesible from the current coordinates?
+        for dx, dy in DIRECTIONS_GRID:
+            if is_cell_valid(len(lines), len(lines[0]), x + dx, y + dy):
+                reachable[x + dx][y + dy] = 1            
+
+        # What coordinates to explore next?
+        for dx, dy in DIRECTIONS["ALL"]:
             if (
-                valid_coordinates(len(lines), len(lines[0]), x + dx, y + dy)
-                and not steps[x + dx][y + dy] in symbols
+                are_coordinates_valid_grid(len(lines), len(lines[0]), x + dx, y + dy)
+                and is_valid_transition_grid(lines, x, y, dx, dy, len(lines), len(lines[0])) 
+                and not visited[x + dx][y + dy]
             ):
-                steps[x + dx][y + dy] = symbols[0]
                 explore_queue.append((x + dx, y + dy))
+                visited[x + dx][y + dy] = True
+
+    print("\n".join("".join(str(el) for el in row) for row in reachable))
+    return sum(r.count(0) for r in reachable)
 
 if __name__ == "__main__":
     script_dir = Path(__file__).resolve().parent
@@ -101,22 +145,15 @@ if __name__ == "__main__":
                     start_coordinates = (i, j)
                     break
             
-            steps, symbols = bfs(lines, *start_coordinates)
-
+            reachable = mark_loop_as_visited(lines, *start_coordinates)
+            lines = [list(line) for line in lines]
+            pass
             for i in range(len(lines)):
-                if not lines[i][0] in symbols:
-                    flood_fill(steps, i, 0, symbols)
-
-                if not lines[i][len(lines) - 1] in symbols:
-                    flood_fill(steps, i, len(lines[0]) - 1, symbols)
-
-            for i in range(len(lines[0])):
-                if not lines[0][i] in symbols:
-                    flood_fill(steps, 0, i, symbols)
-
-                if not lines[len(lines) - 1][i] in symbols:
-                    flood_fill(steps, len(lines) - 1, i, symbols)
-
-            sol = sum(step.count(None) for step in steps)
+                for j in range(len(lines[0])):
+                    if reachable[i][j] == 0:
+                        lines[i][j] = '.'
+            lines = [''.join(line) for line in lines]
+            
+            sol = flood_fill(lines, reachable)
                 
         print(f"------> {sol}")
